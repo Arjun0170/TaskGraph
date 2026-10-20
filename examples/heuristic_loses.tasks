@@ -1,0 +1,7 @@
+# Two workers: FIFO finishes at 6, critical-path priority finishes at 7.
+# With no edges, critical-path priority reduces to longest-job-first.
+archive 3 0 0 -
+backup 2 0 0 -
+cleanup 2 0 0 -
+download 3 0 0 -
+export 2 0 0 -
