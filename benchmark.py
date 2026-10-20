@@ -1,4 +1,4 @@
-"""Reproducible simulated makespan comparison; not a CPU-speed benchmark."""
+"""Compare FIFO and critical-path makespan on reproducible generated workloads."""
 import argparse
 import json
 from pathlib import Path

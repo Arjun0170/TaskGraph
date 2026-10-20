@@ -1,10 +1,10 @@
 # TaskGraph — dependency-aware job scheduling simulator
 
-A batch workflow contains jobs such as extraction, validation, report generation, and backup. Some jobs depend on others. TaskGraph answers: **given a fixed worker count and estimated job durations, what execution order does a scheduling rule produce?**
+TaskGraph simulates batch workflows with job dependencies, limited workers, and retryable failures. It compares FIFO and critical-path scheduling and produces a deterministic trace of every execution attempt.
 
-It simulates execution with a logical clock. It does not launch commands, create threads, sleep for durations, or manage real infrastructure. This keeps scheduling behavior reproducible and makes failure cases easy to inspect.
+The engine uses a logical clock and completion events to calculate schedules without waiting for jobs to run. It supports DAG validation, bounded retries, descendant blocking, and JSON output.
 
-## Build and demo
+## Quick start
 
 Requirements: a GCC/Clang C++17 compiler and CMake 3.16+. The optional benchmark driver needs Python 3.10+. GitHub Actions builds with sanitizers, runs the tests, and reproduces the benchmark.
 
@@ -24,12 +24,12 @@ python3 benchmark.py build/taskgraph
 
 Output is JSON: overall makespan, total busy worker-time, a fault-free lower bound, final job states, and every executed attempt. A valid simulation returns exit code 0 even when simulated jobs fail; invalid input returns 2 and an error on stderr.
 
-| Input, with two workers | FIFO | Critical-path priority | Lesson |
+| Input, with two workers | FIFO | Critical-path priority | Behavior |
 | --- | ---: | ---: | --- |
 | `pipeline.tasks` | 8 | 6 | Start the longer dependency chain early |
 | `heuristic_loses.tasks` | 6 | 7 | The greedy rule is not an optimal scheduler |
 
-All times are arbitrary **simulated units**. Neither result is a measured CPU speedup. The pipeline example is intentionally small enough to draw by hand.
+Times are simulated units. The table compares workload completion time under each policy.
 
 In `recovery.tasks`, `fetch` succeeds on attempt 2, `validate` fails both attempts, `publish` and `notify` become blocked, and the independent backup finishes normally. Critical-policy makespan is 10 units.
 
@@ -70,7 +70,7 @@ pending -> ready -> running -> succeeded
 
 Blocked descendants cannot already be running: one of their prerequisites has never succeeded. Multiple failed ancestors do not repeatedly traverse already-blocked descendants.
 
-Objects use standard containers and automatic lifetime management; there are no manual `new`/`delete` calls. The policy interface has a virtual destructor because `main` owns implementations through `unique_ptr<ReadyPolicy>`.
+Graph and scheduling state use STL containers with automatic lifetime management. The CLI selects a policy through `unique_ptr<ReadyPolicy>`; the interface provides a virtual destructor.
 
 ## Complexity and bounds
 
@@ -84,7 +84,7 @@ For fault-free workloads, any schedule needs at least:
 max(longest dependency-chain duration, ceil(sum of durations / workers))
 ```
 
-This is a lower bound, not necessarily an attainable schedule. With unlimited workers, the makespan equals the critical path. With one worker, it equals total work. Both properties are checked on 200 seeded DAGs. For injected-failure workloads, the CLI emits `null` for this field rather than presenting a misleading bound when descendants can be skipped.
+The bound may not be attainable under a particular workload. With unlimited workers, the makespan equals the critical path; with one worker, it equals total work. Both properties are checked on 200 seeded DAGs. For injected-failure workloads, this field is `null` because blocked descendants may be skipped.
 
 ## Tests and measurements
 
@@ -92,6 +92,8 @@ The C++ tests check known schedules, cycle/malformed-input rejection, overflow, 
 
 The Python benchmark generates 40 synthetic DAGs, each with 40 jobs and four workers, using seeds 0..39. An edge from an earlier to a later job is included with probability 0.08; durations are uniform integers 1..20. These choices guarantee acyclic inputs and define a narrow workload distribution. All raw runs are reported, including wins/ties/losses. The separate five-job counterexample demonstrates that success on this distribution does not establish dominance over FIFO.
 
-## Deliberate limits
+## Scope
 
-No actual processes, threads, restart recovery, online arrivals, resource-specific requirements, deadlines, or duration uncertainty. FIFO means order of becoming ready, not file order. Critical-path priority ignores expected retries and is a heuristic. Known-duration offline simulation cannot establish production throughput or reliability.
+TaskGraph models a finite batch of jobs submitted at time zero, known durations, and identical workers. Retries are immediate and non-preemptive. It simulates scheduling rather than launching processes or threads. Online arrivals, deadlines, resource-specific requirements, and restart recovery are outside the current model.
+
+FIFO follows readiness order. Critical-path priority is a greedy heuristic that uses estimated durations and does not account for expected retries. The benchmark includes a separate counterexample where FIFO produces a shorter schedule.
